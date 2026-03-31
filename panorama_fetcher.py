@@ -11,6 +11,8 @@ import aiohttp
 import numpy as np
 import cv2
 import logging
+import io
+import requests
 from typing import Optional, Dict, Any, Tuple
 from PIL import Image
 import pandas as pd
@@ -102,7 +104,8 @@ class PanoramaFetcher:
     
     def fetch_panorama_sync(self, pano_id: str) -> Optional[Image.Image]:
         """
-        Fetch the original panorama image for a given pano_id using streetlevel (synchronous).
+        Fetch the original panorama image for a given pano_id by downloading tiles
+        directly from Google's tile servers.
         
         Args:
             pano_id: Panorama ID to fetch
@@ -111,34 +114,48 @@ class PanoramaFetcher:
             Panorama image as PIL Image or None if failed
         """
         try:
-            from streetlevel import streetview
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             
-            # Use streetlevel to find and download the panorama
-            pano = streetview.find_panorama_by_id(pano_id)
-            if pano is None:
-                logger.warning(f"Failed to find panorama {pano_id}")
+            # Use zoom level 3: 8 tiles wide x 4 tiles tall, each 512x512
+            # Result: 4096 x 2048 equirectangular panorama
+            zoom = 3
+            tiles_x = 2 ** zoom  # 8
+            tiles_y = 2 ** (zoom - 1)  # 4
+            tile_size = 512
+            
+            logger.info(f"Fetching panorama {pano_id} at zoom {zoom} ({tiles_x}x{tiles_y} tiles)")
+            
+            def fetch_tile(x, y):
+                url = f'https://cbk0.google.com/cbk?output=tile&panoid={pano_id}&zoom={zoom}&x={x}&y={y}'
+                try:
+                    r = requests.get(url, timeout=15)
+                    if r.status_code == 200 and len(r.content) > 2000:
+                        tile = Image.open(io.BytesIO(r.content))
+                        if tile.mode != 'RGB':
+                            tile = tile.convert('RGB')
+                        return (x, y, tile)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch tile ({x},{y}) for {pano_id}: {e}")
+                return (x, y, None)
+            
+            # Download all tiles concurrently
+            panorama = Image.new('RGB', (tiles_x * tile_size, tiles_y * tile_size))
+            valid_tiles = 0
+            
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [executor.submit(fetch_tile, x, y) for y in range(tiles_y) for x in range(tiles_x)]
+                for future in as_completed(futures):
+                    x, y, tile = future.result()
+                    if tile is not None:
+                        panorama.paste(tile, (x * tile_size, y * tile_size))
+                        valid_tiles += 1
+            
+            if valid_tiles == 0:
+                logger.warning(f"No valid tiles found for panorama {pano_id}")
                 return None
             
-            # Download the panorama image at highest resolution
-            try:
-                # Get panorama with maximum quality if supported
-                panorama_image = streetview.get_panorama(pano, zoom=5)  # Highest zoom level
-            except:
-                # Fallback to default if zoom parameter not supported
-                panorama_image = streetview.get_panorama(pano)
-            
-            if panorama_image is None:
-                logger.warning(f"Failed to download panorama {pano_id}")
-                return None
-            
-            # Return the PIL Image directly
-            if isinstance(panorama_image, Image.Image):
-                return panorama_image
-            elif isinstance(panorama_image, np.ndarray):
-                return Image.fromarray(panorama_image)
-            else:
-                logger.warning(f"Unexpected panorama image type: {type(panorama_image)}")
-                return None
+            logger.info(f"Successfully fetched panorama {pano_id}: {valid_tiles}/{tiles_x * tiles_y} tiles")
+            return panorama
                 
         except Exception as e:
             logger.error(f"Error fetching panorama {pano_id}: {e}")
