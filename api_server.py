@@ -276,7 +276,9 @@ def serve_index():
 
 @app.errorhandler(404)
 def not_found(e):
-    """Serve index.html for SPA client-side routing."""
+    """Serve index.html for SPA client-side routing, but not for API routes."""
+    if request.path.startswith('/api/') or request.path == '/health':
+        return jsonify({"error": "Not found"}), 404
     return app.send_static_file('index.html')
 
 # Initialize data and processors at import time (for gunicorn)
