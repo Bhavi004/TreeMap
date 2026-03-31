@@ -1,0 +1,82 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+*.manifest
+*.spec
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.cache/
+
+# Jupyter / IPython
+.ipynb_checkpoints
+*.ipynb
+.profile
+*.pkl
+
+# Large data directories (use archives instead)
+data/south_delhi/masks/
+data/chandigarh/
+
+# Django / Flask / FastAPI stuff
+*.log
+local_settings.py
+db.sqlite3
+instance/
+.mypy_cache/
+.pyre/
+.pytype/
+
+# --- Node / React ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+yarn.lock
+.pnpm-debug.log
+
+# Build output
+dist/
+build/
+.cache/
+.next/
+out/
+*.tsbuildinfo
+
+# --- Environment / OS ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.bak
+
+# --- IDE ---
+.vscode/
+.idea/
+*.iml
+
+# --- Misc ---
+*.env
+*.local
+*.secret
