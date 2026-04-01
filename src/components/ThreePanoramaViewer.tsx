@@ -1,12 +1,66 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { getApiUrl } from '../config';
 
 interface ThreePanoramaViewerProps {
   panoId: string | null;
   treeLat?: number;
   treeLng?: number;
   clickedImagePath?: string;
+}
+
+/**
+ * Fetch panorama tiles directly from Google's tile server and stitch them
+ * into a single equirectangular panorama image on a canvas.
+ */
+async function fetchPanoramaTiles(panoId: string): Promise<string> {
+  const zoom = 3;
+  const tilesX = 2 ** zoom; // 8
+  const tilesY = 2 ** (zoom - 1); // 4
+  const tileSize = 512;
+  const width = tilesX * tileSize;
+  const height = tilesY * tileSize;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d')!;
+
+  // Fetch all tiles concurrently
+  const tilePromises: Promise<{ x: number; y: number; img: HTMLImageElement | null }>[] = [];
+  for (let y = 0; y < tilesY; y++) {
+    for (let x = 0; x < tilesX; x++) {
+      const url = `https://cbk0.google.com/cbk?output=tile&panoid=${panoId}&zoom=${zoom}&x=${x}&y=${y}`;
+      tilePromises.push(
+        new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            // Check if tile is a valid image (not a blank/dead tile)
+            // Dead tiles are typically very small (< 2KB when encoded)
+            resolve({ x, y, img });
+          };
+          img.onerror = () => resolve({ x, y, img: null });
+          img.src = url;
+        })
+      );
+    }
+  }
+
+  const tiles = await Promise.all(tilePromises);
+  let validTiles = 0;
+
+  for (const tile of tiles) {
+    if (tile.img) {
+      ctx.drawImage(tile.img, tile.x * tileSize, tile.y * tileSize);
+      validTiles++;
+    }
+  }
+
+  if (validTiles === 0) {
+    throw new Error('This panorama is no longer available on Google Street View');
+  }
+
+  return canvas.toDataURL('image/jpeg', 0.92);
 }
 
 export const ThreePanoramaViewer: React.FC<ThreePanoramaViewerProps> = ({ 
@@ -47,19 +101,10 @@ export const ThreePanoramaViewer: React.FC<ThreePanoramaViewerProps> = ({
         setLoading(true);
         setError(null);
         
-        // Fetch the panorama image with masks already applied
-        const url = clickedImagePath 
-          ? `${getApiUrl()}/api/panorama/${panoId}?image_path=${encodeURIComponent(clickedImagePath)}`
-          : `${getApiUrl()}/api/panorama/${panoId}`;
-        const response = await fetch(url);
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch panorama: ${response.statusText}`);
-        }
-        
-        const blob = await response.blob();
-        const imageUrl = URL.createObjectURL(blob);
-        setPanoramaImage(imageUrl);
+        // Fetch panorama tiles directly from Google's tile server
+        // This is much faster than going through our backend
+        const imageDataUrl = await fetchPanoramaTiles(panoId);
+        setPanoramaImage(imageDataUrl);
         
       } catch (err) {
         console.error('Error fetching panorama:', err);
@@ -232,15 +277,6 @@ export const ThreePanoramaViewer: React.FC<ThreePanoramaViewerProps> = ({
     return () => {
       if (sceneRef.current) {
         sceneRef.current.cleanup();
-      }
-    };
-  }, [panoramaImage]);
-
-  // Cleanup object URL when component unmounts or image changes
-  useEffect(() => {
-    return () => {
-      if (panoramaImage) {
-        URL.revokeObjectURL(panoramaImage);
       }
     };
   }, [panoramaImage]);
