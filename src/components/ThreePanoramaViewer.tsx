@@ -105,9 +105,9 @@ function drawMasks(
  * then overlay mask annotations.
  */
 async function fetchPanoramaTiles(panoId: string, clickedImagePath?: string): Promise<string> {
-  const zoom = 3;
-  const tilesX = 2 ** zoom; // 8
-  const tilesY = 2 ** (zoom - 1); // 4
+  const zoom = 2;
+  const tilesX = 2 ** zoom; // 4
+  const tilesY = 2 ** (zoom - 1); // 2
   const tileSize = 512;
   const width = tilesX * tileSize;
   const height = tilesY * tileSize;
