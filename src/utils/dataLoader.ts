@@ -1,15 +1,17 @@
 import { TreeData, StreetViewData, PanoramaMaskData } from '../types';
-import { getApiUrl } from '../config';
+import { getApiUrl, isStaticMode, basePath } from '../config';
 
-// Load tree data from API (server-side preprocessing for performance)
+// Load tree data - from static JSON on GitHub Pages, from API on Render
 export const loadTreeData = async (): Promise<TreeData[]> => {
   try {
-    console.log('🌳 Loading tree data from API...');
+    console.log('🌳 Loading tree data...');
     const startTime = Date.now();
     
-    const apiUrl = getApiUrl();
-    const response = await fetch(`${apiUrl}/api/tree-data`);
-    console.log('📡 API response status:', response.status, response.statusText);
+    const url = isStaticMode
+      ? `${basePath}data/tree-data.json`
+      : `${getApiUrl()}/api/tree-data`;
+    const response = await fetch(url);
+    console.log('📡 Response status:', response.status, response.statusText);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch tree data: ${response.statusText}`);
@@ -27,14 +29,16 @@ export const loadTreeData = async (): Promise<TreeData[]> => {
   }
 };
 
-// Load street view data from API (server-side preprocessing for performance)
+// Load street view data - from static JSON on GitHub Pages, from API on Render
 export const loadStreetViewData = async (): Promise<StreetViewData[]> => {
   try {
-    console.log('📍 Loading street view data from API...');
+    console.log('📍 Loading street view data...');
     const startTime = Date.now();
     
-    const apiUrl = getApiUrl();
-    const response = await fetch(`${apiUrl}/api/streetview-data`);
+    const url = isStaticMode
+      ? `${basePath}data/streetview-data.json`
+      : `${getApiUrl()}/api/streetview-data`;
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Failed to fetch street view data: ${response.statusText}`);
     }
