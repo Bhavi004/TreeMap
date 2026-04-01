@@ -1,0 +1,9 @@
+# Ensure binary files are not mangled by git
+*.tar.gz binary
+*.gz binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.svg text
+*.json text
