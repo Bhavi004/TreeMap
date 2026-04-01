@@ -37,6 +37,10 @@ htmlcov/
 data/south_delhi/masks/
 data/chandigarh/
 
+# Pre-computed mask files (use tarball instead)
+public/data/masks/
+public/data/masks-bundle.json
+
 # Django / Flask / FastAPI stuff
 *.log
 local_settings.py

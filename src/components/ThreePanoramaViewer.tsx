@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { basePath, isStaticMode, getApiUrl } from '../config';
 
 interface ThreePanoramaViewerProps {
   panoId: string | null;
@@ -8,11 +9,102 @@ interface ThreePanoramaViewerProps {
   clickedImagePath?: string;
 }
 
+interface MaskPolygon {
+  pts: [number, number][];
+  ip: string; // image_path
+}
+
+interface PrecomputedMaskData {
+  polygons: MaskPolygon[];
+}
+
+/**
+ * Fetch pre-computed mask polygons for a panorama.
+ * Returns null if mask data is not available.
+ */
+async function fetchMaskData(panoId: string): Promise<PrecomputedMaskData | null> {
+  try {
+    // On GH Pages, fetch from static files; on Render, could use API
+    const url = isStaticMode
+      ? `${basePath}data/masks/${panoId}.json`
+      : `${getApiUrl()}/api/mask-data/${panoId}`;
+
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    // Static mode returns pre-computed format; API returns raw format
+    if (data.polygons) return data as PrecomputedMaskData;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Draw mask polygon overlays on the panorama canvas.
+ */
+function drawMasks(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  masks: PrecomputedMaskData,
+  clickedImagePath?: string
+) {
+  for (const mask of masks.polygons) {
+    if (mask.pts.length < 3) continue;
+
+    const isHighlight = !!(clickedImagePath && mask.ip === clickedImagePath);
+
+    // Convert normalized 0-1 coordinates to pixel coordinates
+    const pixelPts = mask.pts.map(([nx, ny]) => [nx * width, ny * height] as [number, number]);
+
+    // Draw filled polygon with low opacity
+    ctx.beginPath();
+    ctx.moveTo(pixelPts[0][0], pixelPts[0][1]);
+    for (let i = 1; i < pixelPts.length; i++) {
+      ctx.lineTo(pixelPts[i][0], pixelPts[i][1]);
+    }
+    ctx.closePath();
+
+    ctx.fillStyle = isHighlight ? 'rgba(0, 255, 0, 0.08)' : 'rgba(0, 255, 0, 0.05)';
+    ctx.fill();
+
+    // Draw outline
+    ctx.strokeStyle = isHighlight ? 'rgba(0, 255, 0, 0.9)' : 'rgba(0, 255, 0, 0.7)';
+    ctx.lineWidth = isHighlight ? 3 : 2;
+    ctx.stroke();
+
+    if (isHighlight) {
+      // Draw bounding box
+      const xs = pixelPts.map(p => p[0]);
+      const ys = pixelPts.map(p => p[1]);
+      const x1 = Math.min(...xs), x2 = Math.max(...xs);
+      const y1 = Math.min(...ys), y2 = Math.max(...ys);
+
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+      // Draw center point
+      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 12, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 0, 0, 0.9)';
+      ctx.fill();
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  }
+}
+
 /**
  * Fetch panorama tiles directly from Google's tile server and stitch them
- * into a single equirectangular panorama image on a canvas.
+ * into a single equirectangular panorama image on a canvas,
+ * then overlay mask annotations.
  */
-async function fetchPanoramaTiles(panoId: string): Promise<string> {
+async function fetchPanoramaTiles(panoId: string, clickedImagePath?: string): Promise<string> {
   const zoom = 3;
   const tilesX = 2 ** zoom; // 8
   const tilesY = 2 ** (zoom - 1); // 4
@@ -25,7 +117,9 @@ async function fetchPanoramaTiles(panoId: string): Promise<string> {
   canvas.height = height;
   const ctx = canvas.getContext('2d')!;
 
-  // Fetch all tiles concurrently
+  // Fetch tiles and mask data concurrently
+  const maskPromise = fetchMaskData(panoId);
+
   const tilePromises: Promise<{ x: number; y: number; img: HTMLImageElement | null }>[] = [];
   for (let y = 0; y < tilesY; y++) {
     for (let x = 0; x < tilesX; x++) {
@@ -34,11 +128,7 @@ async function fetchPanoramaTiles(panoId: string): Promise<string> {
         new Promise((resolve) => {
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            // Check if tile is a valid image (not a blank/dead tile)
-            // Dead tiles are typically very small (< 2KB when encoded)
-            resolve({ x, y, img });
-          };
+          img.onload = () => resolve({ x, y, img });
           img.onerror = () => resolve({ x, y, img: null });
           img.src = url;
         })
@@ -46,7 +136,7 @@ async function fetchPanoramaTiles(panoId: string): Promise<string> {
     }
   }
 
-  const tiles = await Promise.all(tilePromises);
+  const [tiles, maskData] = await Promise.all([Promise.all(tilePromises), maskPromise]);
   let validTiles = 0;
 
   for (const tile of tiles) {
@@ -58,6 +148,12 @@ async function fetchPanoramaTiles(panoId: string): Promise<string> {
 
   if (validTiles === 0) {
     throw new Error('This panorama is no longer available on Google Street View');
+  }
+
+  // Draw mask overlays on top of the panorama
+  if (maskData && maskData.polygons.length > 0) {
+    drawMasks(ctx, width, height, maskData, clickedImagePath);
+    console.log(`🎭 Drew ${maskData.polygons.length} mask overlays on panorama`);
   }
 
   return canvas.toDataURL('image/jpeg', 0.92);
@@ -102,8 +198,8 @@ export const ThreePanoramaViewer: React.FC<ThreePanoramaViewerProps> = ({
         setError(null);
         
         // Fetch panorama tiles directly from Google's tile server
-        // This is much faster than going through our backend
-        const imageDataUrl = await fetchPanoramaTiles(panoId);
+        // and overlay mask annotations
+        const imageDataUrl = await fetchPanoramaTiles(panoId, clickedImagePath);
         setPanoramaImage(imageDataUrl);
         
       } catch (err) {

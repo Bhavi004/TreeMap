@@ -28,6 +28,12 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      - name: Extract pre-computed masks
+        run: |
+          cd public/data
+          tar -xzf precomputed-masks.tar.gz
+          echo "Extracted $(ls masks/ | wc -l) mask files"
+
       - name: Build for GitHub Pages
         env:
           VITE_STATIC_MODE: 'true'
