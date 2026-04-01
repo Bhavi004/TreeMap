@@ -116,11 +116,11 @@ class PanoramaFetcher:
         try:
             from concurrent.futures import ThreadPoolExecutor, as_completed
             
-            # Use zoom level 3: 8 tiles wide x 4 tiles tall, each 512x512
-            # Result: 4096 x 2048 equirectangular panorama
-            zoom = 3
-            tiles_x = 2 ** zoom  # 8
-            tiles_y = 2 ** (zoom - 1)  # 4
+            # Use zoom level 2: 4 tiles wide x 2 tiles tall, each 512x512
+            # Result: 2048 x 1024 equirectangular panorama (fast, good enough quality)
+            zoom = 2
+            tiles_x = 2 ** zoom  # 4
+            tiles_y = 2 ** (zoom - 1)  # 2
             tile_size = 512
             
             logger.info(f"Fetching panorama {pano_id} at zoom {zoom} ({tiles_x}x{tiles_y} tiles)")
